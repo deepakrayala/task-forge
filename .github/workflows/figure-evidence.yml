@@ -76,6 +76,11 @@ jobs:
           }
 
           run_shell "FIGURE 4.1 — Environment versions" 'lsb_release -a; uname -r; gcc --version; make --version; valgrind --version'
+
+          # GitHub-hosted runners start from a fresh checkout without bin/ artifacts.
+          # Build the executables before running the standalone Figure 4 test commands.
+          run_check "PREPARATION — Build binaries for Figure 4 tests" make -j"$(nproc)" all
+
           run_check "FIGURE 4.2 — Bounded queue" ./bin/test_bounded_queue
           run_check "FIGURE 4.3 — Shutdown" ./bin/test_shutdown
           run_check "FIGURE 4.4 — Futures" ./bin/test_futures
@@ -95,7 +100,7 @@ jobs:
           run_check "FIGURE A.7 — Valgrind futures pass (make valgrind target)" make valgrind
 
           run_shell "FIGURE A.8 — CLI workflow" "printf 'status\\nsubmit high 10 42\\nmap 1000\\nrun workload.spec\\nexit\\n' | ./bin/taskforge_cli"
-          run_shell "FIGURE A.9 — Git history, status, and artifacts" 'git log --oneline -15; git status; ls bin lib'
+          run_shell "FIGURE A.9 — Git history, status, and artifacts" 'git log --oneline -15; git status; echo "[Requested listing: ls bin lib]"; ls bin lib || { echo "[INFO] lib/ is not a directory in this repository; Makefile writes libraries to build/."; echo "[Actual output directories: ls bin build]"; ls bin build; }'
 
           {
             echo
