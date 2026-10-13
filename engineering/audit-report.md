@@ -73,9 +73,9 @@ No dependency manifest or third-party package lockfile is present in the tracked
 ### TF-IPC-005 — Server stop API does not stop the listener
 
 - **Severity/confidence:** P2 (API contract clarity) / high.
-- **Evidence:** `taskforge_ipc_server_stop` only unlinks the socket pathname; it does not wake the server's blocking `accept()` loop.
+- **Evidence:** The original implementation only unlinked the socket pathname. The current implementation sends a reserved internal stop request, validates the server acknowledgement, and waits for the original socket pathname to be released; `tests/test_ipc_stop.c` verifies active-server shutdown and preservation of non-socket paths.
 - **Impact:** Callers could believe a listening server process had terminated when it was merely unlinked from its pathname.
-- **Remediation/status:** Public header and README now document that it only unlinks a socket path and does not terminate the server. A future true-stop API needs an explicit server handle or authenticated control channel.
+- **Remediation/status:** Resolved on `main`: the implementation uses a reserved internal stop request and the README/public header document the confirmed shutdown behavior. Regression coverage is in `tests/test_ipc_stop.c`.
 ### TF-QUEUE-001 — Producer ticket cancellation can fail open into a permanent stall
 - **Component:** `src/queue.c`, `cancel_ticket`, `abandon_ticket`
 - **Severity/confidence:** P2 / medium-high
@@ -199,7 +199,7 @@ GitHub Actions run [37963052958](https://github.com/rushmanthnalluri/task-forge/
 - **PR #17 — cancellation transition races:** latest head `9782657e040d0fd6270eb7190d1d5b69f7fb3233` passed all five required gates plus GitGuardian in [run 38014612604](https://github.com/rushmanthnalluri/task-forge/actions/runs/38014612604) and merged as `41f3ac680cce421cd0fda6f581529d0600a947bc`; post-merge main [run 38014687803](https://github.com/rushmanthnalluri/task-forge/actions/runs/38014687803) passed all five gates. `tests/test_cancel_race.c` exercises pending cancellation vs RUNNING, 200 trials, and cancellation racing immediate shutdown. Latest logs observed 123 cancellation wins and 77 tasks running; Valgrind reports zero errors.
 - **Failure diagnosis:** earlier head `9d55ecfd5e2992356a5b25ba9b2bd99a7ebe79b1` failed because the test assumed `CANCELLED` implied the asynchronous cleanup callback had already run; `test_futures` exposed the same assumption. The final revision waits for disposal/cleanup before asserting and passed the exact-head gates. Intermediate run [38014594307](https://github.com/rushmanthnalluri/task-forge/actions/runs/38014594307) was cancelled when the branch advanced; it is not a validation result for the final head.
 - **PR #18 — test map declarations:** added `<pthread.h>` to `tests/test_map.c`; exact-head run [38014763502](https://github.com/rushmanthnalluri/task-forge/actions/runs/38014763502) passed all five required gates plus GitGuardian, and the build log contains no implicit-declaration warnings for `pthread_create`/`pthread_join`. Merged as `022f3430da6ddb969b4d9c0fa0c92abae6749a6d`; post-merge main [run 38014822336](https://github.com/rushmanthnalluri/task-forge/actions/runs/38014822336) passed all five gates.
-- **Next audit priority:** IPC server stop semantics; `taskforge_ipc_server_stop` currently unlinks the socket path but does not wake a server blocked in `accept()`. Keep the limitation explicit until a safe stop protocol and regression test are verified.
+- **Status update:** IPC server stop semantics were addressed with the reserved `__taskforge_stop__` control request. The active server acknowledges the request, exits its accept loop, closes the listener, and removes only its originally bound socket inode. `tests/test_ipc_stop.c` covers active-server shutdown and protection of regular files.
 
 
 ## Mission update — active IPC server stop
