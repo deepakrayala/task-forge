@@ -33,7 +33,7 @@ Built for Linux / POSIX systems using C11, `pthreads`, and C11 atomics.
 * **Versioned Local IPC (`taskforge_ipc_*`)**:
   * Uses a registered-handler Unix-domain socket protocol with bounded payloads, response-length framing, and a shared response-read deadline.
   * Rejects unsupported protocol versions and malformed response framing; preserves non-socket paths instead of deleting them.
-  * Existing socket paths are not removed automatically. `taskforge_ipc_server_stop` only unlinks a socket pathname; it does not terminate a listening server.
+  * Existing socket paths are not removed automatically when starting a server. `taskforge_ipc_server_stop` sends the reserved internal stop request to the active server, waits for its acknowledgement and for the server to remove its own socket pathname, and returns an error if shutdown cannot be confirmed. It does not unlink arbitrary paths or regular files.
 * **Signal-Safe Shutdown (`SIGINT`) & On-Disk Persistence**:
   * Gracefully catches `SIGINT` (Ctrl+C), drains accepted work, and joins workers.
   * Thread-safe disk logger recording timestamps, worker IDs, and durations to disk (`taskforge_tasks.log`).
