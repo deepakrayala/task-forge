@@ -8,8 +8,10 @@ on:
 permissions:
   contents: read
 
+# Give each evidence run its own group so an older, slow report run cannot
+# hold a corrected/manual evidence run in the queue.
 concurrency:
-  group: taskforge-figure-evidence-${{ github.ref }}
+  group: taskforge-figure-evidence-${{ github.run_id }}
   cancel-in-progress: false
 
 jobs:
