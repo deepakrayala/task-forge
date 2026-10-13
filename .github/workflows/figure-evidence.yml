@@ -1,0 +1,120 @@
+name: TaskForge Figure Evidence
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: taskforge-figure-evidence-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  collect-evidence:
+    name: Run requested report figures
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Valgrind and environment tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y valgrind lsb-release build-essential
+
+      - name: Execute requested commands and capture output
+        shell: bash
+        run: |
+          set +e
+          mkdir -p evidence
+          LOG="$GITHUB_WORKSPACE/evidence/taskforge-evidence.txt"
+          SUMMARY="$GITHUB_WORKSPACE/evidence/summary.txt"
+          : > "$LOG"
+          : > "$SUMMARY"
+
+          echo "TaskForge figure evidence" | tee -a "$LOG"
+          echo "Timestamp: $(date -Is)" | tee -a "$LOG"
+          echo "Commit: $(git rev-parse HEAD)" | tee -a "$LOG"
+          echo "Runner: $RUNNER_OS / $ImageOS" | tee -a "$LOG"
+
+          run_check() {
+            label="$1"
+            shift
+            {
+              echo
+              echo "============================================================"
+              echo "$label"
+              printf 'COMMAND:'
+              printf ' %q' "$@"
+              echo
+              echo "============================================================"
+            } | tee -a "$LOG"
+            "$@" 2>&1 | tee -a "$LOG"
+            rc=${PIPESTATUS[0]}
+            echo "EXIT_CODE=$rc" | tee -a "$LOG"
+            printf '%s | exit=%s\n' "$label" "$rc" | tee -a "$SUMMARY"
+          }
+
+          run_shell() {
+            label="$1"
+            command="$2"
+            {
+              echo
+              echo "============================================================"
+              echo "$label"
+              echo "COMMAND: $command"
+              echo "============================================================"
+            } | tee -a "$LOG"
+            bash -lc "$command" 2>&1 | tee -a "$LOG"
+            rc=${PIPESTATUS[0]}
+            echo "EXIT_CODE=$rc" | tee -a "$LOG"
+            printf '%s | exit=%s\n' "$label" "$rc" | tee -a "$SUMMARY"
+          }
+
+          run_shell "FIGURE 4.1 — Environment versions" 'lsb_release -a; uname -r; gcc --version; make --version; valgrind --version'
+          run_check "FIGURE 4.2 — Bounded queue" ./bin/test_bounded_queue
+          run_check "FIGURE 4.3 — Shutdown" ./bin/test_shutdown
+          run_check "FIGURE 4.4 — Futures" ./bin/test_futures
+          run_check "FIGURE 4.5 — Work stealing" ./bin/test_work_stealing
+
+          run_check "FIGURE 9.1 — Million-task test" make test-million
+          run_check "FIGURE 9.2 — Scaling benchmark" make bench
+          run_check "FIGURE 9.3 — Stealing vs global queue" ./bin/bench_stealing_vs_global
+
+          run_shell "FIGURE A.1 — Clean parallel build" 'make clean && make -j"$(nproc)" all'
+          run_check "FIGURE A.2 — Complete test suite" make test
+          run_check "FIGURE A.3 — Task priorities" ./bin/test_priorities
+          run_check "FIGURE A.4a — Stress test" ./bin/test_stress
+          run_check "FIGURE A.4b — Logging test" ./bin/test_logging
+          run_check "FIGURE A.5 — AddressSanitizer/UBSan" make asan
+          run_check "FIGURE A.6 — Valgrind bounded queue pass (make valgrind target)" make valgrind
+          run_check "FIGURE A.7 — Valgrind futures pass (make valgrind target)" make valgrind
+
+          run_shell "FIGURE A.8 — CLI workflow" "printf 'status\\nsubmit high 10 42\\nmap 1000\\nrun workload.spec\\nexit\\n' | ./bin/taskforge_cli"
+          run_shell "FIGURE A.9 — Git history, status, and artifacts" 'git log --oneline -15; git status; ls bin lib'
+
+          {
+            echo
+            echo "Evidence collection completed at $(date -Is)"
+            echo "Commit under test: $(git rev-parse HEAD)"
+            echo "Note: command failures, if any, are listed by exit code in summary.txt."
+          } | tee -a "$LOG"
+
+          cat "$SUMMARY"
+          if grep -Eq 'exit=[1-9][0-9]*$' "$SUMMARY"; then
+            echo "One or more evidence commands failed; artifact will still be uploaded."
+            exit 1
+          fi
+
+      - name: Upload evidence logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: taskforge-figure-evidence
+          path: evidence/
+          if-no-files-found: warn
+          retention-days: 30
